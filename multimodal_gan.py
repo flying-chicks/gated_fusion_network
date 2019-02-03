@@ -1,5 +1,11 @@
+# -*- encoding: utf-8 -*-
+
+# @Time    : 11/24/18 12:29 PM
+# @File    : multimodal_gan.py
+
+# installed packages and modules
 from keras.layers import (Dense, Conv1D, MaxPool1D, Flatten,
-                          Dropout, Embedding, Input, Activation, BatchNormalization,
+                          Dropout, Input, Activation, BatchNormalization,
                           concatenate, GaussianNoise)
 from keras.models import Model
 from keras.optimizers import RMSprop
@@ -7,17 +13,13 @@ from numpy.random import standard_normal
 from numpy import zeros
 import numpy as np
 from random import sample
-from sklearn.externals import joblib
-from sklearn.preprocessing import minmax_scale
 from keras.regularizers import l1_l2
 
-from warnings import filterwarnings
-filterwarnings("ignore")
 
-
-def read(fname):
-    with open(fname, 'rb') as fr:
-        return joblib.load(fr)
+# created packages and modules
+from .utils import Word2Embedded, tanh3
+from .settings import (TEXTS_SIZE, TEXT_NOISE_SIZE, EMBEDDING_SIZE,
+                       IMAGES_SIZE, IMAGE_NOISE_SIZE, LEAVES_SIZE, LEAF_NOISE_SIZE)
 
 
 def generator_for_text(noise_len, embedding_len, conv_filters, conv_window_len):
@@ -25,12 +27,12 @@ def generator_for_text(noise_len, embedding_len, conv_filters, conv_window_len):
     # add input layer
     texts_noise = Input(shape=(noise_len, embedding_len), dtype="float32", name="texts_noise")
 
-    # add first conv layer and batchnormlization layer
+    # add first conv layer and batch-normlization layer
     hidden_layers = Conv1D(conv_filters, conv_window_len, padding='valid', strides=1)(texts_noise)
     hidden_layers = BatchNormalization()(hidden_layers)
     hidden_layers = Activation(activation='relu')(hidden_layers)
 
-    # add second conv layer and batchnormlization layer
+    # add second conv layer and batch-normlization layer
     hidden_layers = Conv1D(conv_filters, conv_window_len, padding='valid', strides=1)(hidden_layers)
     hidden_layers = BatchNormalization()(hidden_layers)
     hidden_layers = Activation(activation='relu')(hidden_layers)
@@ -45,7 +47,7 @@ def generator_for_text(noise_len, embedding_len, conv_filters, conv_window_len):
 
     hidden_layers = Conv1D(conv_filters, conv_window_len, padding='valid', strides=1)(hidden_layers)
     hidden_layers = BatchNormalization()(hidden_layers)
-    texts_out = Activation("tanh")(hidden_layers)
+    texts_out = Activation(tanh3)(hidden_layers)
 
     gen_model = Model(inputs=[texts_noise], outputs=[texts_out])
     return gen_model
@@ -121,74 +123,59 @@ def fix_model(model, is_trainable=False):
         layer.trainable = is_trainable
 
 
-class Word2Embedded(object):
-    def __init__(self, text_len, embedding_matrix):
-        text_input = Input(shape=(text_len, ), dtype="int32")
-        embedded = Embedding(input_dim=embedding_matrix.shape[0], output_dim=embedding_matrix.shape[1],
-                             input_length=text_len, weights=[embedding_matrix], trainable=False)(text_input)
-        self.model = Model(inputs=[text_input], outputs=[embedded])
-
-    def __call__(self, texts):
-        return self.model.predict(texts)
-
-
 class Gan(object):
     def __init__(self):
         # create the generator and discriminator model.
         # create the generator model
-        text_len = 400
-        text_noise_len = 410
-        embedding_len = 300
-        embedding_matrix = read("/home/ygy/embedding_matrix.pkl").astype("float32")
-
-        # map data into [-1, 1] corresponding to the tanh activation of generator's output layer.
-        embedding_matrix = minmax_scale(embedding_matrix, feature_range=(-1, 1), axis=1)
+        texts_size = TEXTS_SIZE
+        text_noise_size = TEXT_NOISE_SIZE
+        embedding_size = EMBEDDING_SIZE
 
         conv_filters = 300
         conv_window_len = 3
 
-        image_len = 4
-        image_noise_len = 50
+        image_size = IMAGES_SIZE
+        image_noise_size = IMAGE_NOISE_SIZE
         image_dense_units = 100
 
-        leaf_len = 300
-        leaf_noise_len = 350
+        leaves_size = LEAVES_SIZE
+        leaf_noise_size = LEAF_NOISE_SIZE
         leaf_dense_units = 500
 
         dis_lr = 1e-4
         gen_lr = 1e-3
 
-        self.generator_for_text = generator_for_text(noise_len=text_noise_len,
-                                                     embedding_len=embedding_len,
+        self.generator_for_text = generator_for_text(noise_len=text_noise_size,
+                                                     embedding_len=embedding_size,
                                                      conv_filters=conv_filters,
                                                      conv_window_len=conv_window_len,
                                                      )
 
-        self.generator_for_image = generator_for_image_or_leaf(noise_len=image_noise_len,
-                                                               out_len=image_len,
+        self.generator_for_image = generator_for_image_or_leaf(noise_len=image_noise_size,
+                                                               out_len=image_size,
                                                                dense_units=image_dense_units,
                                                                )
 
-        self.generator_for_leaf = generator_for_image_or_leaf(noise_len=leaf_noise_len,
-                                                              out_len=leaf_len,
+        self.generator_for_leaf = generator_for_image_or_leaf(noise_len=leaf_noise_size,
+                                                              out_len=leaves_size,
                                                               dense_units=leaf_dense_units,
                                                               )
 
         # create the discriminator model
-        self.discriminator = discriminator(text_len, embedding_len,
+        self.discriminator = discriminator(texts_size, embedding_size,
                                            conv_filters=250,
                                            conv_window_len=3,
                                            dense_units=250,
                                            lr=dis_lr,
-                                           images_size=image_len,
-                                           leaves_size=leaf_len)
+                                           images_size=image_size,
+                                           leaves_size=leaves_size)
         # fix the discriminator
         fix_model(self.discriminator, is_trainable=False)
 
-        # ensamble the generator and discriminator model into a gan model
-        text_noise_in = Input(shape=(text_noise_len, embedding_len), dtype="float32", name="text_noise_in")
-        image_noise_in = Input(shape=(image_noise_len,), dtype="float32", name="image_noise_in")
-        leaf_noise_in = Input(shape=(leaf_noise_len,), dtype="float32", name="leaf_noise_in")
+        # assemble the generator and discriminator model into a gan model
+        text_noise_in = Input(shape=(text_noise_size, embedding_size), dtype="float32", name="text_noise_in")
+        image_noise_in = Input(shape=(image_noise_size,), dtype="float32", name="image_noise_in")
+        leaf_noise_in = Input(shape=(leaf_noise_size,), dtype="float32", name="leaf_noise_in")
 
         text_hidden_layer = self.generator_for_text(text_noise_in)
         image_hidden_layer = self.generator_for_image(image_noise_in)
@@ -201,13 +188,13 @@ class Gan(object):
         optimizer = RMSprop(lr=gen_lr, clipvalue=1.0, decay=1e-8)
         self.gan_model.compile(optimizer=optimizer, loss="binary_crossentropy", metrics=["accuracy"])
 
-        self.text_len = text_len
-        self.text_noise_len = text_noise_len
-        self.embedding_len = embedding_len
-        self.word2embedded = Word2Embedded(text_len, embedding_matrix)
+        self.text_len = texts_size
+        self.text_noise_len = text_noise_size
+        self.embedding_len = embedding_size
+        self.word2embedded = Word2Embedded(texts_size)
 
-        self.image_noise_len = image_noise_len
-        self.leaf_noise_len = leaf_noise_len
+        self.image_noise_len = image_noise_size
+        self.leaf_noise_len = leaf_noise_size
 
         self.losses = {"gen_loss": [], "dis_loss": []}
 
@@ -221,7 +208,7 @@ class Gan(object):
                                                       self.image_noise_len)).astype(dtype="float32")
 
             leaf_seed_noises = standard_normal(size=(batch_size,
-                                                      self.leaf_noise_len)).astype(dtype="float32")
+                                                     self.leaf_noise_len)).astype(dtype="float32")
 
             # counterfeit text, image and leaf
             gen_embedding_mat = self.generator_for_text.predict(text_seed_noises)
@@ -264,7 +251,7 @@ class Gan(object):
                                                       self.image_noise_len)).astype(dtype="float32")
 
             leaf_seed_noises = standard_normal(size=(batch_size,
-                                                      self.leaf_noise_len)).astype(dtype="float32")
+                                                     self.leaf_noise_len)).astype(dtype="float32")
 
             target = zeros([batch_size, 2], dtype="int32")
             target[:, 1] = 1
@@ -278,36 +265,3 @@ class Gan(object):
             print(("epoch: {}, training generator, "
                    "loss: {:.2f}, accuracy: {:.2f}").format(epoch + 1, *gen_loss))
             print('-' * 60)
-
-
-if __name__ == "__main__":
-
-    texts_ = read("/home/ygy/concat_sequences.pkl")
-    old_data = read("/home/ygy/features.pkl")
-    target_ = read("/home/ygy/label.pkl")
-
-    # images_ = old_data.iloc[:, 200:204]
-    images_ = read('/home/ygy/images_fixed.pkl')
-    leaves_ = old_data.iloc[:, 204:]
-
-    index = set(texts_.index) & set(images_.index) & set(leaves_.index) & set(target_.index[target_.iloc[:, 0] == 1])
-
-    texts_ = texts_.loc[~texts_.index.duplicated(), :]
-    texts_ = texts_.loc[index, :].values.astype("float32")
-
-    images_ = images_.loc[~images_.index.duplicated(), :]
-    images_ = minmax_scale(images_.loc[index, :].values.astype("float32"), feature_range=(-1, 1), axis=0)
-
-    leaves_ = leaves_.loc[~leaves_.index.duplicated(), :]
-    leaves_ = minmax_scale(leaves_.loc[index, :].values.astype("float32"), feature_range=(-1, 1), axis=0)
-
-    # generator based on cnn
-    gan = Gan()
-    gan.train(texts_, images_, leaves_, epochs=5000, batch_size=50)
-
-    gan.generator_for_text.save('/home/ygy/gan_model/generator_for_text.h5')
-    gan.generator_for_image.save('/home/ygy/gan_model/generator_for_image.h5')
-    gan.generator_for_leaf.save('/home/ygy/gan_model/generator_for_leaf.h5')
-    gan.discriminator.save('/home/ygy/gan_model/discriminator.h5')
-    with open('/home/ygy/gan_model/losses.pkl', 'wb') as fw:
-        joblib.dump(gan.losses, fw)
