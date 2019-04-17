@@ -1,4 +1,4 @@
-# A Deep Multimodal Fusion Framework For Recognizing Faculty Homepages
+# A Multimodal Generative and Fusion Framework for Recognizing Faculty Homepages
 
 ## Main components 
  This framework mainly consists of two components: Multimodal Generative Adversarial Nets and Gated Fusion Network.
