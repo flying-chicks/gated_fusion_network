@@ -1,25 +1,43 @@
 # -*- encoding: utf-8 -*-
 
 # @Time    : 11/24/18 12:29 PM
+# @Author  : Kennis Yu
 # @File    : multimodal_gan.py
 
+from random import sample
+
+import numpy as np
 # installed packages and modules
 from keras.layers import (Dense, Conv1D, MaxPool1D, Flatten,
                           Dropout, Input, Activation, BatchNormalization,
-                          concatenate, GaussianNoise)
+                          concatenate, GaussianNoise, multiply, RepeatVector,
+                          Lambda)
 from keras.models import Model
 from keras.optimizers import RMSprop
-from numpy.random import standard_normal
-from numpy import zeros
-import numpy as np
-from random import sample
 from keras.regularizers import l1_l2
+from numpy import zeros
+from numpy.random import standard_normal
 
-
-# created packages and modules
-from .utils import Word2Embedded, tanh3
 from .settings import (TEXTS_SIZE, TEXT_NOISE_SIZE, EMBEDDING_SIZE,
                        IMAGES_SIZE, IMAGE_NOISE_SIZE, LEAVES_SIZE, LEAF_NOISE_SIZE)
+# created packages and modules
+from .utils import Word2Embedded, tanh3
+
+
+def kronecker_product(mat1, mat2):
+    n1 = mat1.get_shape()[1]
+    n2 = mat2.get_shape()[1]
+    mat1 = RepeatVector(n2)(mat1)
+    mat1 = concatenate([mat1[:, :, i] for i in range(n1)], axis=-1)
+    mat2 = Flatten()(RepeatVector(n1)(mat2))
+    result = multiply(inputs=[mat1, mat2])
+
+    # convert (i-1)dim to i dim
+    # result = Reshape((n2, n1))(result)
+    return result
+
+
+Kronecker = Lambda(lambda tensors: kronecker_product(tensors[0], tensors[1]))
 
 
 def generator_for_text(noise_len, embedding_len, conv_filters, conv_window_len):
@@ -27,12 +45,12 @@ def generator_for_text(noise_len, embedding_len, conv_filters, conv_window_len):
     # add input layer
     texts_noise = Input(shape=(noise_len, embedding_len), dtype="float32", name="texts_noise")
 
-    # add first conv layer and batch-normlization layer
+    # add first conv layer and batch-normalization layer
     hidden_layers = Conv1D(conv_filters, conv_window_len, padding='valid', strides=1)(texts_noise)
     hidden_layers = BatchNormalization()(hidden_layers)
     hidden_layers = Activation(activation='relu')(hidden_layers)
 
-    # add second conv layer and batch-normlization layer
+    # add second conv layer and batch-normalization layer
     hidden_layers = Conv1D(conv_filters, conv_window_len, padding='valid', strides=1)(hidden_layers)
     hidden_layers = BatchNormalization()(hidden_layers)
     hidden_layers = Activation(activation='relu')(hidden_layers)
@@ -54,10 +72,12 @@ def generator_for_text(noise_len, embedding_len, conv_filters, conv_window_len):
 
 
 def generator_for_image_or_leaf(noise_len, out_len, dense_units):
-    noise = Input(shape=(noise_len, ), dtype="float32", name="images_noise")
+    noise = Input(shape=(noise_len,), dtype="float32", name="images_noise")
 
     # add full-connect layer
     hidden_layers = Dense(dense_units, activation="relu")(noise)
+    hidden_layers = Dense(dense_units, activation="relu")(hidden_layers)
+    hidden_layers = Dense(dense_units, activation="relu")(hidden_layers)
     hidden_layers = Dense(dense_units, activation="relu")(hidden_layers)
     hidden_layers = Dense(dense_units, activation="relu")(hidden_layers)
     hidden_layers = Dense(dense_units, activation="relu")(hidden_layers)
@@ -68,40 +88,56 @@ def generator_for_image_or_leaf(noise_len, out_len, dense_units):
 
 
 def discriminator(text_len, embedding_len, conv_filters, conv_window_len, dense_units,
-                  images_size, leaves_size, lr):
+                  images_size, leaves_size, lr, is_gate=True):
     # start to create CNN
     # add input layer
     texts = Input(shape=(text_len, embedding_len), dtype="float32", name="texts")
-
-    # add drop-out layer
-    hidden_layers = GaussianNoise(0.01)(texts)
-    # hidden_layers = Dropout(0.5)(texts)
+    texts_with_noise = GaussianNoise(0.01)(texts)
 
     # add first conv layer and max-pool layer
-    hidden_layers = Conv1D(conv_filters, conv_window_len, padding='valid',
-                           activation='sigmoid', strides=1)(hidden_layers)
-    hidden_layers = MaxPool1D()(hidden_layers)
+    texts_conv1d = Conv1D(conv_filters, conv_window_len, padding='valid',
+                          activation='linear', strides=1)(texts_with_noise)
+    texts_pool1d = MaxPool1D()(texts_conv1d)
 
     # add flatten layer
-    hidden_layers = Flatten()(hidden_layers)
+    texts_flatten = Flatten()(texts_pool1d)
 
     # add full-connect layer and drop-out layer
-    hidden_layers = Dense(dense_units, activation="sigmoid")(hidden_layers)
-    hidden_layers = Dropout(0.5)(hidden_layers)
-    # hidden_layers = Dense(dense_units, activation="sigmoid")(hidden_layers)
-    # hidden_layers = Dropout(0.5)(hidden_layers)
+    texts_dense = Dense(10, activation="linear")(texts_flatten)
+    texts_out = Dropout(0.5)(texts_dense)
 
     images = Input(shape=(images_size,), name='images')
     images_with_noise = GaussianNoise(0.01)(images)
+    images_out = Dense(4, activation='linear')(images_with_noise)
 
     leaves = Input(shape=(leaves_size,), name="leaves")
     leaves_with_noise = GaussianNoise(0.01)(leaves)
+    leaves_out = Dense(5, activation='linear')(leaves_with_noise)
 
-    cat_data = concatenate([hidden_layers, images_with_noise, leaves_with_noise], axis=-1)
+    if is_gate:
+        texts_gate = Dense(10, activation="hard_sigmoid", name='texts_gate')(concatenate([images_out, leaves_out],
+                                                                                         axis=-1))
+        images_gate = Dense(4, activation="hard_sigmoid", name='images_gate')(concatenate([texts_out, leaves_out],
+                                                                                          axis=-1))
+        leaves_gate = Dense(5, activation="hard_sigmoid", name='leaves_gate')(concatenate([texts_out, images_out],
+                                                                                          axis=-1))
+        texts_filtered = multiply([texts_out, texts_gate])
+        images_filtered = multiply([images_out, images_gate])
+        leaves_filtered = multiply([leaves_out, leaves_gate])
+    else:
+        texts_filtered = texts_out
+        images_filtered = images_out
+        leaves_filtered = leaves_out
 
-    cat_hidden = Dense(dense_units, activation="sigmoid")(cat_data)
-    cat_hidden = Dropout(0.5)(cat_hidden)
-    cat_hidden = Dense(dense_units, activation="sigmoid")(cat_hidden)
+    texts_images_kron = Kronecker([images_filtered, texts_filtered])
+    texts_leaves_kron = Kronecker([leaves_filtered, texts_filtered])
+    images_leaves_kron = Kronecker([images_filtered, leaves_filtered])
+
+    datas = [texts_out, images_out, leaves_out, texts_images_kron,
+                texts_leaves_kron, images_leaves_kron]
+
+    cat_data = concatenate(datas)
+    cat_hidden = Dense(dense_units, activation="linear")(cat_data)
     cat_hidden = Dropout(0.5)(cat_hidden)
 
     # add output layer with softmax
