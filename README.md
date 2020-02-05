@@ -1,6 +1,6 @@
 # A Multimodal Generative and Fusion Framework for Recognizing Faculty Homepages
 
-This project is used for identifying faculty homepages in the vertical search engine -- [Professor++](http://www.findingprofessor.com), which is aimed at providing information collection and retrieval of the faculty in universities all over the world.
+This project is used for identifying faculty homepages in the vertical search engine -- [Professor++](http://www.findingprofessor.com), which is aimed at obtaining the relevant information on researchers and tracing hot research topics in universities all over the world.
 
 Recognizing faculty homepages is essentially a multimodal classification problem in which a target faculty homepage is determined by three different information sources, including text, images, and layout. In addition, recognizing faculty homepages is a class-imbalanced problem in which the total number of samples of a minority class is far smaller than the sample number of other classes. In this study, we propose a multimodal generative and fusion framework for multimodal learning with the problems of imbalanced data and mutually dependent feature modes. In particular, a multimodal generative adversarial network is first introduced to rebalance the dataset by generating pseudo features based on each mode and integrating them to describe a fake sample. Then, a gated fusion network with the gate and fusion mechanisms is presented to capture the links among the different feature modes and reduce the noise for generalization.
 
