@@ -40,8 +40,6 @@ GFN_TRAIN_PARAMETERS = {
 
 N_GEN_SAMPLES = 15700
 
-N_ADJUST_SAMPLES = 5000
-
 MULTI_GENERATOR_FOR_TEXT = PREFIX + "/multimodal_gan/generator_for_text.h5"
 MULTI_GENERATOR_FOR_IMAGE = PREFIX + "/multimodal_gan/generator_for_image.h5"
 MULTI_GENERATOR_FOR_LEAF = PREFIX + "/multimodal_gan/generator_for_leaf.h5"
