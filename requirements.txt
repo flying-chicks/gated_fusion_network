@@ -104,7 +104,7 @@ markdown-include==0.5.1
 MarkupSafe==1.0
 matplotlib==2.2.2
 mccabe==0.6.1
-mistune==0.8.3
+mistune==2.0.3
 mkdocs==1.0.4
 mkdocs-pandoc==0.2.6
 mkl-fft==1.0.0
